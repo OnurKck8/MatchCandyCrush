@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 public class PotionBoard : MonoBehaviour
@@ -16,6 +17,13 @@ public class PotionBoard : MonoBehaviour
     private Node[,] potionBoard;
     public GameObject potionBoardGo;
 
+    public List<GameObject> potionToDestroy = new();
+
+    [SerializeField]
+    private Potion selectedPotion;
+    [SerializeField]
+    private bool isProcessingMove;
+
     //layoutArray
     public ArrayLayout arrayLayout;
     //public static of potionBoard
@@ -29,8 +37,31 @@ public class PotionBoard : MonoBehaviour
     {
         InitializeBoard();
     }
+    private void Update()
+    {
+        if (Input.GetMouseButtonDown(0))
+        {
+            Ray ray=Camera.main.ScreenPointToRay(Input.mousePosition);
+            RaycastHit2D hit=Physics2D.Raycast(ray.origin,ray.direction);
+            if(hit.collider != null && hit.collider.gameObject.GetComponent<Potion>())
+            {
+                if(isProcessingMove)
+                {
+                    return;
+                }
+
+                Potion potion=hit.collider.gameObject.GetComponent<Potion>();
+                UnityEngine.Debug.Log("I have a clicked a potion it is: " + potion.gameObject);
+
+                SelectPotion(potion);
+            }
+        }
+    }
+
     void InitializeBoard()
     {
+        DestroyPotions();
+
         potionBoard = new Node[width, height];
 
         xSpacing = (float)(width - 1) / 2;
@@ -52,6 +83,7 @@ public class PotionBoard : MonoBehaviour
                     GameObject potion = Instantiate(potionPrefabs[randomIndex], position, Quaternion.identity);
                     potion.GetComponent<Potion>().SetIndicies(x, y);
                     potionBoard[x, y] = new Node(true, potion);
+                    potionToDestroy.Add(potion);
                 }
             }
         }
@@ -63,6 +95,18 @@ public class PotionBoard : MonoBehaviour
         else
         {
             UnityEngine.Debug.Log("There are no matches, it's time to start the game!");
+        }
+    }
+
+    private void DestroyPotions()
+    {
+        if(potionToDestroy!=null)
+        {
+            foreach (GameObject potion in potionToDestroy)
+            {
+                Destroy(potion);
+            }
+            potionToDestroy.Clear();
         }
     }
 
@@ -220,6 +264,84 @@ public class PotionBoard : MonoBehaviour
             }
         }
     }
+
+    #region Swapping Potions
+    //select potion
+    public void SelectPotion(Potion _potion)
+    {
+        //if we don't have pation currently selected, then set the potion i just clicked my to selectedpotion
+        if(selectedPotion==null)
+        {
+            UnityEngine.Debug.Log(_potion);
+            selectedPotion = _potion;
+        }
+        //if we select the same potion twice,then let's make selectedpotion null
+        else if (selectedPotion == _potion)
+        {
+            selectedPotion = null;
+        }
+        //if selectedpotion is not null and is not the current potion,attempt a swap
+        //selectedpotion back to null
+        else if (selectedPotion != _potion)
+        {
+            SwapPotion(selectedPotion,_potion);
+            selectedPotion = null;
+        }
+    }
+    //swap potion - logic
+    private void SwapPotion(Potion _currentpotion,Potion _targetPotion)
+    {
+        //!IsAdjacent don't do anything
+        if(!IsAdjacent(_currentpotion, _targetPotion))
+        {
+            return;
+        }
+        DoSwap(_currentpotion, _targetPotion);
+
+        isProcessingMove = true;
+
+        //startCoroutine ProcessMatches
+        StartCoroutine(ProcessMatches(_currentpotion, _targetPotion));
+    }
+    //do swap 
+    private void DoSwap(Potion _currentPotion,Potion _targetPotion)
+    {
+        GameObject temp = potionBoard[_currentPotion.xIndex,_currentPotion.yIndex].potion;
+        potionBoard[_currentPotion.xIndex, _currentPotion.yIndex].potion = potionBoard[_targetPotion.xIndex, _targetPotion.yIndex].potion;
+        potionBoard[_targetPotion.xIndex, _targetPotion.yIndex].potion=temp;
+
+        //update indicies
+        int tempXIndex = _currentPotion.xIndex;
+        int tempYIndex = _currentPotion.yIndex;
+        _currentPotion.xIndex = _targetPotion.xIndex;
+        _currentPotion.yIndex = _targetPotion.yIndex;
+        _targetPotion.xIndex = tempXIndex;
+        _targetPotion.yIndex=tempYIndex;
+
+        _currentPotion.MoveToTarget(potionBoard[_targetPotion.xIndex, _targetPotion.yIndex].potion.transform.position);
+        _targetPotion.MoveToTarget(potionBoard[_currentPotion.xIndex, _currentPotion.yIndex].potion.transform.position);
+    }
+
+    private IEnumerator ProcessMatches(Potion _currentPotion,Potion _targetPotion)
+    {
+        yield return new WaitForSeconds(0.2f);
+
+        bool hasMatch = CheckBoard();
+
+        if(!hasMatch)
+        {
+            DoSwap(_currentPotion, _targetPotion);
+        }
+        isProcessingMove = false;
+    }
+
+    //IsAdjacent
+    private bool IsAdjacent(Potion _currentpotion,Potion _targetPotion)
+    {
+        return Mathf.Abs(_currentpotion.xIndex - _targetPotion.xIndex) + Mathf.Abs(_currentpotion.yIndex - _targetPotion.yIndex) == 1;
+    }
+    //ProcessMatches
+    #endregion
 }
 
 public class MatchResult
