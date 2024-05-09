@@ -27,12 +27,14 @@ public class PotionBoard : MonoBehaviour
     private Potion selectedPotion;
     [SerializeField]
     private bool isProcessingMove;
+    [SerializeField]
+    List<Potion> potionsToRemove = new();
 
     //layoutArray
     public ArrayLayout arrayLayout;
     //public static of potionBoard
     public static PotionBoard Instance;
-
+   
     private void Awake()
     {
         Instance = this;
@@ -92,7 +94,7 @@ public class PotionBoard : MonoBehaviour
                 }
             }
         }
-        if(CheckBoard(false))
+        if(CheckBoard())
         {
             UnityEngine.Debug.Log("We have matches let's re-create the board");
             InitializeBoard();
@@ -115,12 +117,15 @@ public class PotionBoard : MonoBehaviour
         }
     }
 
-    public bool CheckBoard(bool _takeAction)
+    public bool CheckBoard()
     {
+        if (GameManager.Instance.IsGameEnded)
+            return false;
+
         UnityEngine.Debug.Log("Checking Board");
         bool hasMatched = false;
 
-        List<Potion> potionsToRemove = new();
+        potionsToRemove.Clear();
 
         foreach (Node nodePotion in potionBoard)
         {
@@ -164,21 +169,24 @@ public class PotionBoard : MonoBehaviour
             }
 
         }
-        if (_takeAction)
-        {
-            foreach (Potion potionToRemove in potionsToRemove)
-            {
-                potionToRemove.isMatched = false;
-            }
-
-            RemoveAndRefill(potionsToRemove);
-            //check for a brand new match
-            if (CheckBoard(false))
-            {
-                CheckBoard(true);
-            }
-        }
         return hasMatched;
+    }
+
+    public IEnumerator ProcessTurnOnMatchedBoard(bool _subtractMoves)
+    {
+        foreach (Potion potionToRemove in potionsToRemove)
+        {
+            potionToRemove.isMatched = false;
+        }
+
+        RemoveAndRefill(potionsToRemove);
+        GameManager.Instance.ProcessTurn(potionsToRemove.Count, _subtractMoves);
+        yield return new WaitForSeconds(0.4f);
+
+        if(CheckBoard())
+        {
+            StartCoroutine(ProcessTurnOnMatchedBoard(false));
+        }
     }
 
     //RemoveAndRefill (list of potions)
@@ -539,9 +547,12 @@ public class PotionBoard : MonoBehaviour
     {
         yield return new WaitForSeconds(0.2f);
 
-        bool hasMatch = CheckBoard(true);//xxxx
-
-        if(!hasMatch)
+        if(CheckBoard())
+        {
+            //Start a coroutine that is going to process our matches in our turn.
+            StartCoroutine(ProcessTurnOnMatchedBoard(true));
+        }
+        else
         {
             DoSwap(_currentPotion, _targetPotion);
         }
